@@ -1,0 +1,354 @@
+---
+title: "HW1"
+author: "Napon Jatusripitak"
+date: "1/29/2018"
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    number_sections: yes
+header-includes: \usepackage{enumitem}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+# Set working directory
+setwd("~/polisci490/HW1")
+
+# Load packages
+packages <- c("dplyr","ggplot2","broom", "glmnet", "e1071")
+
+load.packages <- function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+}
+
+lapply(packages, load.packages)
+```
+
+# Tidy Verse!
+
+## Compare glm and glmnet
+
+glm
+```{r echo=FALSE}
+glm(mpg ~ ., data = mtcars) %>% coef()
+
+```
+glmnet
+```{r echo=FALSE}
+glmnet::glmnet(x = as.matrix(mtcars[, -1]), y = mtcars$mpg,
+               alpha = 1, lambda = 1) %>% coef()
+```
+
+## Compare glm and glmnet with tidy()
+glm
+```{r echo=FALSE}
+glm(mpg ~ ., data = mtcars) %>% broom::tidy()
+
+```
+glmnet
+```{r echo=FALSE}
+glmnet::glmnet(x = as.matrix(mtcars[, -1]), y = mtcars$mpg,
+               alpha = 1, lambda = 1) %>% broom::tidy()
+```
+
+# Regression
+
+```{r include=FALSE}
+# Load data
+sick_data <- read.csv("sick_data.csv")
+```
+
+## OLS
+### Estimate y ~ x1 + x2 + u
+
+```{r}
+ols.reg <- lm(as.numeric(result)-1 ~ temp + bp, data = sick_data)
+ols.reg %>% tidy() %>% knitr::kable()
+```
+
+### Get predicted values. y_hat > 0.5 = positive for disease. y_hat < 0.5 = negative for disease
+```{r}
+y_hat <- fitted(ols.reg)
+ols.reg.predict <- sick_data$result
+ols.reg.predict[y_hat >= 0.5]= "Positive"
+ols.reg.predict[y_hat < 0.5]= "Negative"
+```
+
+We can construct a confusion matrix relating the predicted values to actual values
+```{r}
+knitr:: kable(table(ols.reg.predict, sick_data$result))
+mean(ols.reg.predict == sick_data$result)
+```
+Which tells us that OLS incorrectly predicted the outcomes of 36 out of 1000 people.
+
+### Generate the equation of the line where y_hat = 0.5 as a function of blood pressure and temperature
+Equation is given by 0.5 = B0 + B1X1 + B2X2
+```{r}
+intercept <- (0.5 - coef(ols.reg)[1]) / coef(ols.reg)[3]
+slope <- -1 * coef(ols.reg)[2] / coef(ols.reg)[3]
+line_0.5 <- function(x) {
+  intercept + slope*x
+}
+```
+
+### Display the blood pressure and temperature data on a single scatterplot, using either color or shape to distinguish between positive and negative results. Add the line you calculated from the previous step.
+
+```{r echo=FALSE}
+p <- ggplot(sick_data, aes(temp, bp))
+p + geom_point(aes(color = factor(result))) + stat_function(fun = line_0.5) + labs(title = "OLS")
+```
+
+
+## Logit
+
+### Estimate y ~ x1 + x2 + u
+```{r}
+logit.reg <- glm(result ~ temp + bp,data= sick_data ,family = "binomial")
+logit.reg %>% tidy() %>% knitr::kable()
+```
+
+### Get predicted values. y_hat > 0.5 = positive for disease. y_hat < 0.5 = negative for disease.
+
+```{r}
+y_hat <- fitted(logit.reg)
+logit.reg.predict <- sick_data$result
+logit.reg.predict[y_hat >= 0.5]= "Positive"
+logit.reg.predict[y_hat < 0.5]= "Negative"
+```
+
+We can construct a confusion matrix relating the predicted values to the actual values.
+
+```{r}
+knitr::kable(table(logit.reg.predict, sick_data$result))
+mean(logit.reg.predict == sick_data$result)
+```
+Which tells us that OLS incorrectly predicted the outcomes of 8 out of 1000 people.
+
+
+### Generate the equation of the line where y_hat = 0.5 as a function of blood pressure and temperature
+
+Equation is given by 0.5 = B0 + B1X1 + B2X2
+```{r}
+intercept <- (0.5 - coef(logit.reg)[1]) / coef(logit.reg)[3]
+slope <- -1 * coef(logit.reg)[2] / coef(logit.reg)[3]
+line_0.5 <- function(x) {
+  intercept + slope*x
+}
+```
+
+
+
+### Display the blood pressure and temperature data on a single scatterplot, using either color or shape to distinguish between positive and negative results. Add the line you calculated from the previous step.
+
+```{r echo=FALSE}
+p <- ggplot(sick_data, aes(temp, bp))
+p + geom_point(aes(color = factor(result))) + stat_function(fun = line_0.5) + labs(title = "Logit")
+```
+
+
+## Ridge
+
+### Estimate y ~ x1 + x2 + u
+```{r}
+ridge.reg <- glmnet(x = as.matrix(sick_data[, -1]), y = sick_data$result, alpha = 0, lambda = 1, family = "binomial")
+ridge.reg %>% tidy() %>% knitr::kable()
+```
+
+
+
+### Get predicted values. y_hat > 0.5 = positive for disease. y_hat < 0.5 = negative for disease.
+```{r}
+y_hat <- predict(ridge.reg, newx = as.matrix(sick_data[, -1]))
+ridge.reg.predict <- sick_data$result
+ridge.reg.predict[y_hat >= 0.5]= "Positive"
+ridge.reg.predict[y_hat < 0.5]= "Negative"
+```
+
+We can construct a confusion matrix relating the predicted values and the actual values.
+```{r}
+knitr:: kable(table(ridge.reg.predict, sick_data$result))
+mean(ridge.reg.predict == sick_data$result)
+```
+
+Which tells us that OLS incorrectly predicted the outcomes of 50 out of 1000 people.
+
+
+### Generate the equation of the line where y_hat = 0.5 as a function of blood pressure and temperature
+
+Equation is given by 0.5 = B0 + B1X1 + B2X2
+```{r}
+intercept <- (0.5 - coef(ridge.reg)[1]) / coef(ridge.reg)[3]
+slope <- -1 * coef(ridge.reg)[2] / coef(ridge.reg)[3]
+line_0.5 <- function(x) {
+  intercept + slope*x
+}
+```
+
+
+### Display the blood pressure and temperature data on a single scatterplot, using either color or shape to distinguish between positive and negative results. Add the line you calculated from the previous step.
+
+```{r echo=FALSE}
+
+p <- ggplot(sick_data, aes(temp, bp))
+p + geom_point(aes(color = factor(result))) + stat_function(fun = line_0.5) + labs(title = "Ridge")
+
+```
+
+# Regularization/Selection
+
+## Load the data, and plot the dependent variable y.
+
+```{r}
+# Load the data, and plot the dependent variable y.
+widget_data <- read.csv("widget_data.csv")
+plot(widget_data$y)
+```
+
+## Ridge
+### Use glmnet() from the glmnet package to estimate a ridge regression with a sequence of labda from 0.01 to 100
+```{r}
+lambdas <- 10^seq(2, -2, length =100)
+ridge.reg.widget <- glmnet(x = as.matrix(widget_data[, -1]), y = widget_data$y, alpha = 0, lambda = lambdas)
+```
+
+### Use tidy from the broom package to extract the data from the regression into a useable format and use ggplot2 to plot the coefficient estimates as lambda changes.
+
+Drop intercepts
+```{r}
+ridge.plot <- filter(ridge.reg.widget %>% tidy() , term != "(Intercept)")
+```
+
+Plot
+```{r echo=FALSE}
+p <- ggplot(ridge.plot, aes(lambda, estimate, color=term))
+p + geom_line() + labs(title = "Ridge")
+```
+
+
+### Use cross validation with cv.glmnet to pick the value of lambda that will minimize mean squared error, and give the coefficients you get when using that lambda 
+```{r}
+ridge.five.fold <- cv.glmnet(x = as.matrix(widget_data[,-1]), y = widget_data$y, alpha = 0, lambda = lambdas, nfolds = 5)
+optimal.lambda <- ridge.five.fold$lambda.min
+```
+
+The lambda that minimizes the mean squared error is
+```{r}
+optimal.lambda
+```
+
+The coefficients that are obtained using this lambda is
+```{r}
+ridge.five.fold %>% coef()
+```
+
+## Lasso
+
+### Use glmnet() from the glmnet package to estimate a lasso regression with a sequence of labda from 0.01 to 100
+```{r}
+lambdas <- 10^seq(2, -2, length =100)
+lasso.reg.widget <- glmnet(x = as.matrix(widget_data[, -1]), y = widget_data$y, alpha = 1, lambda = lambdas)
+```
+
+### Use tidy from the broom package to extract the data from the regression into a useable format and use ggplot2 to plot the coefficient estimates as lambda changes.
+
+Drop intercepts
+```{r}
+lasso.plot <- filter(lasso.reg.widget %>% tidy() , term != "(Intercept)")
+```
+
+Plot
+```{r echo=FALSE}
+p <- ggplot(lasso.plot, aes(lambda, estimate, color=term))
+p + geom_line() + labs(title = "Lasso")
+```
+
+
+### Use cross validation with cv.glmnet to pick the value of lambda that will minimize mean squared error, and give the coefficients you get when using that lambda 
+
+```{r}
+lasso.five.fold <- cv.glmnet(x = as.matrix(widget_data[,-1]), y = widget_data$y, alpha = 1, lambda = lambdas, nfolds = 5)
+optimal.lambda <- lasso.five.fold$lambda.min
+```
+
+The lambda that minimizes the mean squared error is
+```{r}
+optimal.lambda
+```
+
+The coefficients that are obtained using this lambda is
+```{r}
+lasso.five.fold %>% coef()
+```
+
+## Ridge vs Lasso
+Both ridge and lasso models shrink the coefficient estimates, biasing them toward 0 as lambda increases. However, while the ridge regression does not shrink the estimates to an absolute zero, the lasso regression does this, effectively removing less relevant predictors out of the model altogether. At the optimal lambda, the ridge regression retains all predictors, whereas the lasso regression retains only 7 predictors.
+
+# Classification
+
+```{r include=FALSE}
+# Load the data
+pol_data <- read.csv("pol_data.csv")
+
+# Set seed
+set.seed(123)
+```
+
+## Split the data into 2/3 training and 1/3 test data.
+```{r}
+smp <- sample(300, 200)
+train <- pol_data[smp, ]
+test <- pol_data[-smp, ]
+```
+
+
+## Naive Bayes
+
+### Estimate each model using the training data only.
+```{r}
+NB <- naiveBayes(group ~ ., data = train)
+summary(NB)
+```
+
+### Use the model to predict the outcome in the test data.
+```{r}
+ypredict <- predict(NB, test)
+ypredict
+```
+
+
+### Create a table of the predicted classes against the real classes.
+We can construct a confusion matrix
+```{r}
+knitr::kable(table(ypredict, test$group))
+mean(ypredict == test$group)
+```
+Which tells us that the model incorrectly predicts the outcomes of 2 out of 100 individuals.
+
+## SVM
+
+### Estimate each model using the training data only.
+```{r}
+tune.out <- tune(svm, group ~ ., data = train, kernel="linear", ranges = list(cost=c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
+tune.out$best.model
+```
+
+### Use the model to predict the outcome in the test data.
+```{r}
+ypredict <- predict(tune.out$best.model, test)
+ypredict
+```
+
+### Create a table of the predicted classes against the real classes.
+We can construct a confusion matrix
+```{r}
+knitr::kable(table(ypredict, test$group))
+mean(ypredict == test$group)
+```
+Which tells us that the model incorrectly predicts the outcomes of 2 out of 100 individuals. The result appears to be the same with the Naive Bayes model. However, after multiple tries with different set.seed(), the Naive Bayes model seems to outperform the SVM model.

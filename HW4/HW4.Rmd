@@ -1,0 +1,211 @@
+---
+title: "HW4"
+author: "Napon Jatusripitak"
+date: "2/28/2018"
+output:
+  pdf_document:
+    number_sections: true
+  html_document:
+    df_print: paged
+header-includes: \usepackage{enumitem}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+# Set working directory
+setwd("~/polisci490/HW4")
+
+# Load packages
+packages <- c("xml2","rvest", "dplyr", "tm", "tidytext", "ggplot2", "tidyverse", "lubridate", "stringr", "httr", "SnowballC", "proxy", "mixtools", "topicmodels", "stm")
+
+load.packages <- function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+}
+
+lapply(packages, load.packages)
+```
+
+#LDA
+
+1. Import the data (hint: use DirSource), pre-process, and set up a DTM.
+
+```{r}
+#Import
+mydirectory <- file.path("~", "Downloads", "nsf")
+mydocs <- VCorpus(DirSource(mydirectory), readerControl=list(language="eng"))
+
+#Pre-process & DTM
+mydocs.dtm <- mydocs %>%
+  tm_map(content_transformer(tolower)) %>%
+  tm_map(removeWords, stopwords("english")) %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stemDocument) %>%
+  tm_map(stripWhitespace) %>%
+  tm_map(PlainTextDocument) %>%
+  DocumentTermMatrix() %>%
+  removeSparseTerms(sparse = 0.99)
+```
+2. Use LDA to assess topics in these abstracts, first with 5 topics, then with 10.
+
+```{r}
+#https://stackoverflow.com/questions/13944252/remove-empty-documents-from-documenttermmatrix-in-r-topicmodels
+
+#Find the sum of words by row
+rowTotals <- apply(mydocs.dtm, 1, sum) 
+
+#Remove all docs without words
+mydocs.dtm   <- mydocs.dtm[rowTotals> 0, ]           
+
+#Run LDA
+mod.out.5 <- LDA(mydocs.dtm, k=5, control = list(seed=6))
+mod.out.10 <- LDA(mydocs.dtm, k=10, control = list(seed=6))
+```
+
+3. Report these topics in both table and visual formats.
+
+For k=5
+```{r}
+tidy(mod.out.5)
+top.terms <- tidy(mod.out.5) %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top.terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+
+```
+
+For k=10
+```{r}
+tidy(mod.out.10)
+top.terms <- tidy(mod.out.10) %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top.terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+```
+
+4. Compare your results: how does the 10-topic model differ from the 5-topic model?
+
+When we compare the 10-topic model to the 5-topic model, the 10-topic model provides a more specific assessment of the terms that are associated with each topic. For instance, in the 5-topic model, many of the topics share common terms (ie. "will", "project", "research"). It is difficult to tell the topics apart. However, in the 10-topic model, the terms that are associated with each topic are not necessarily shared but they are more informative of what the topic is about (ie. "protein", "mathemat").
+
+#Structural Topic Models
+
+For this problem, use the data on TED talks, which are posted on Canvas.
+1. Import the data, pre-process the transcripts, and create a DTM.
+
+```{r}
+# Import
+ted_talks <- read.csv("ted_talks.csv", stringsAsFactors = F)
+
+#Pre-process & DTM
+ted_talks.dtm <- VectorSource(ted_talks$transcript) %>%
+Corpus() %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stripWhitespace) %>%
+  tm_map(content_transformer(tolower)) %>%
+  tm_map(removeWords, stop_words$word) %>%
+  tm_map(stemDocument) %>%
+  DocumentTermMatrix()
+```
+
+2. Set up the DTM to be correctly formatted for use with the stm package. Use the documentation for
+the package to assist with this.
+
+```{r}
+out <- stm::readCorpus(ted_talks.dtm, type = 'slam')
+```
+
+3. Use stm to fit a structural topic model with 9 topics, conditioning on ted_type, the venue of each of
+these TED talks.
+
+```{r}
+ted.out <- stm(documents = out$documents, 
+               vocab = out$vocab, 
+               K = 9, 
+               prevalence = ~ted_type, 
+               data = ted_talks)
+class(ted.out) #STM
+```
+
+4. Label the topics with labelTopics.
+```{r}
+labelTopics(ted.out, 1:9)
+```
+
+
+5. Using the originally cleaned and pre-processed data, fit a standard “vanilla” LDA model with 9 topics.
+
+```{r}
+ted <- ted_talks %>% 
+  mutate(doc_id = seq.int(nrow(ted_talks)), text = transcript) %>%
+  select(doc_id, text, -transcript, everything())
+  
+ted <- VCorpus(DataframeSource(ted), readerControl=list(language="eng"))
+ 
+ted <- ted %>% 
+  tm_map(content_transformer(tolower)) %>%
+  tm_map(removeWords, stopwords("english")) %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stemDocument) %>%
+  tm_map(stripWhitespace) %>%
+  tm_map(PlainTextDocument) %>%
+  DocumentTermMatrix() %>%
+  removeSparseTerms(sparse = 0.99)
+  
+##
+
+
+#Find the sum of words by row
+rowTotals <- apply(ted, 1, sum) 
+
+#Remove all docs without words
+ted   <- ted[rowTotals> 0, ]           
+
+#Run LDA
+mod.out.9 <- LDA(ted, k=9, control = list(seed=6))
+
+#Plot
+class(mod.out.9) <- "LDA"
+
+tidy(mod.out.9)
+top.terms <- tidy(mod.out.9) %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top.terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+```
+
+6. Compare your results. How do the topics you find when conditioning on venue differ from those you
+found using standard LDA?
+
+On average, STM produces a much more informative topic labels regarding what each topic is about. For instance, in topic 1, we observe terms like "music, sound, play, hear, song, laughter, listen" which provide sufficient information for us to be confident that the topic is something related to musical performance. On the other hand, stnadard LDA produces topic labels that are quite generic (ie. "can", "peopl", "like") which do not help us much to grasp wht the differences between the topics are.
