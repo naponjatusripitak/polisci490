@@ -1,3 +1,12 @@
+---
+layout: post
+title: จับประเด็นข่าวการเมืองจากมติชนออนไลน์
+subtitle: วิเคราะห์ข้อมูลข่าวการเมืองด้วย Latent Dirichlet Allocation
+gh-repo: naponjatusripitak/polisci490/Matichon
+gh-badge: [star, fork, follow]
+tags: [test]
+---
+
 # วิเคราะห์ข่าวการเมืองจากมติชนออนไลน์ด้วย Latent Dirichlet Allocation
 
 ### ก่อนอื่นต้องโหลด package ที่ต้องใช้ในการเก็บข้อมูลและการวิเคราะห์
