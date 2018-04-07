@@ -81,3 +81,106 @@ for(i in 1:lastpage) {
 }
 ```
 
+![alt text](https://naponjatusripitak.github.io/polisci490/Matichon/datastructure.png)
+<p align="center">ตัวอย่าง dataframe ที่ได้จาการดึงข้อมูลข่าว</p>
+
+### ทำการตัดคำด้วย Thai National Language Toolkit จาก https://github.com/pichaio/thainltk
+```R
+devtools::install_github("pichaio/thainltk")
+library(thainltk)
+tt <- thaiTokenizer(skipSpace = T)
+
+matichon$text <- as.character(matichon$text)
+matichon$title <- as.character(matichon$title)
+matichon$link <- as.character(matichon$link)
+matichon$date <- as_date(matichon$date)
+matichon <- matichon %>% filter(str_length(text) > 100)
+
+tokenize <- function(x){
+  texts <- lapply(x, tt)
+  tokens <- sapply(texts, function(k){
+    paste(k, collapse=" ")
+  })
+  result <- gsub("”|“", "", tokens)
+  return(result)
+}
+
+matichon$text <- tokenize(matichon$text)
+
+# Remove duplicate rows
+matichon <- distinct(matichon)
+
+# Add doc_id
+matichon <- matichon %>% mutate(doc_id = seq.int(nrow(matichon)))
+
+# Finalize dataset
+matichon <- matichon %>% select(doc_id, text, everything())
+
+# Transform to corpus object
+matichon.corpus <- VCorpus(DataframeSource(matichon))
+```
+![alt text](https://naponjatusripitak.github.io/polisci490/Matichon/datastructure2.png)
+<p align="center">ตัวอย่าง dataframe หลังทำการตัดคำ</p>
+
+### จัดระเบียบก่อนทำ Topic Modeling
+
+```R
+th.stop <- c(stopwords("th", source = "stopwords-iso"), c("ที่", "ให้", "ได้", "นี้", "ใช้", "ไม่", "แต่", "รู้", "ฝ่าย", "อยู่", "ผู้", "ไว้","อัน", "ใส่", "ตัว") )
+th.stop <- unique(th.stop)
+pattern <- paste(th.stop, collapse="|")
+
+matichon.dtm <- matichon.corpus %>% 
+  tm_map(content_transformer(function(x) gsub(x, pattern = pattern, replacement = ""))) %>%
+  tm_map(removeWords, character(0)) %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stemDocument) %>%
+  tm_map(stripWhitespace) %>%
+  DocumentTermMatrix() %>%
+  removeSparseTerms(sparse = 0.99)
+```
+### Topic Modeling ด้วย LDA (k=60)
+```R
+matichon.60 <- LDA(matichon.dtm, k=60, control = list(seed=6))
+```
+
+### Visualize ด้วย ```LDAvis``` (https://github.com/cpsievert/LDAvis)
+```R
+topicmodels_json_ldavis <- function(fitted, corpus, doc_term){
+  ## Required packages
+  library(topicmodels)
+  library(dplyr)
+  library(stringi)
+  library(tm)
+  library(LDAvis)
+  
+  ## Find required quantities
+  phi <- posterior(fitted)$terms %>% as.matrix
+  theta <- posterior(fitted)$topics %>% as.matrix
+  vocab <- colnames(phi)
+  doc_length <- vector()
+  for (i in 1:length(corpus)) {
+    temp <- paste(corpus[[i]]$content, collapse = ' ')
+    doc_length <- c(doc_length, stri_count(temp, regex = '\\S+'))
+  }
+  temp_frequency <- as.matrix(doc_term[1:nrow(doc_term), 1:ncol(doc_term)])
+  freq_matrix <- data.frame(ST = colnames(temp_frequency),
+                            Freq = colSums(temp_frequency))
+  rm(temp_frequency)
+  
+  ## Convert to json
+  json_lda <- LDAvis::createJSON(phi = phi, theta = theta,
+                                 vocab = vocab,
+                                 doc.length = doc_length,
+                                 term.frequency = freq_matrix$Freq)
+  
+  return(json_lda)
+}
+
+
+matichon.jason <- topicmodels_json_ldavis(matichon.60, matichon.corpus, matichon.dtm)
+serVis(matichon.jason, out.dir = "~/polisci490/Matichon")
+```
+
+
+
